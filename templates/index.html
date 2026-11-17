@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Config Manager — Automatización Cisco IOS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace']
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        /* Scrollbars discretos para visores de configuración */
+        .custom-scroll::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        dialog::backdrop {
+            background: rgba(2, 6, 23, 0.78);
+            backdrop-filter: blur(4px);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-sky-500/30 selection:text-sky-200">
+
+    <!-- Notificaciones Toast -->
+    <aside id="toast-container" aria-live="polite" class="fixed top-4 right-4 z-50 flex flex-col gap-2.5 max-w-md w-full pointer-events-none px-4 sm:px-0"></aside>
+
+    <!-- Cabecera Principal -->
+    <header class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-bold tracking-tight text-white">Network Config Manager</h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">Gestión de Configuraciones SSHv2 &middot; Cisco IOS / GNS3 &middot; Cifrado Fernet</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <div class="hidden md:flex items-center gap-2 text-xs">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Dispositivos: <strong id="stat-devices" class="text-white">0</strong>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                        Respaldos: <strong id="stat-backups" class="text-white">0</strong>
+                    </span>
+                </div>
+                <button id="btn-refresh" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Actualizar
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+            <!-- Columna Izquierda: Alta e Inventario -->
+            <section class="lg:col-span-4 space-y-6">
+
+                <!-- Formulario Alta de Dispositivo -->
+                <article class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl shadow-black/20">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-sm font-semibold uppercase tracking-wider text-sky-400 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                            </svg>
+                            Registrar Dispositivo
+                        </h2>
+                        <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">Fernet AES-128</span>
+                    </div>
+
+                    <form id="add-device-form" class="space-y-3.5" autocomplete="off">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label for="input-hostname" class="block text-xs font-medium text-slate-300 mb-1">Hostname</label>
+                                <input id="input-hostname" name="hostname" type="text" required placeholder="R1-IOSv"
+                                    class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500">
+                            </div>
+                            <div>
+                                <label for="input-ip" class="block text-xs font-medium text-slate-300 mb-1">Dirección IP</label>
+                                <input id="input-ip" name="ip_address" type="text" required placeholder="192.168.76.10"
+                                    class="w-full px-3 py-2 text-sm font-mono rounded-lg bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="col-span-2">
+                                <label for="input-type" class="block text-xs font-medium text-slate-300 mb-1">Plataforma Netmiko</label>
+                                <select id="input-type" name="device_type"
+                                    class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500">
+                                    <option value="cisco_ios" selected>cisco_ios (IOS / IOSv)</option>
+                                    <option value="cisco_xe">cisco_xe (IOS-XE)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="input-port" class="block text-xs font-medium text-slate-300 mb-1">Puerto SSH</label>
+                                <input id="input-port" name="port" type="number" min="1" max="65535" value="22" required
+                                    class="w-full px-3 py-2 text-sm font-mono rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="input-username" class="block text-xs font-medium text-slate-300 mb-1">Usuario SSH</label>
+                            <input id="input-username" name="username" type="text" required placeholder="admin"
+                                class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500">
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label for="input-password" class="block text-xs font-medium text-slate-300 mb-1">Contraseña SSH</label>
+                                <input id="input-password" name="password" type="password" required placeholder="••••••••"
+                                    class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500">
+                            </div>
+                            <div>
+                                <label for="input-secret" class="block text-xs font-medium text-slate-300 mb-1">Enable Secret <span class="text-slate-500">(opcional)</span></label>
+                                <input id="input-secret" name="secret" type="password" placeholder="••••••••"
+                                    class="w-full px-3 py-2 text-sm rounded-lg bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500">
+                            </div>
+                        </div>
+
+                        <button id="btn-submit-device" type="submit"
+                            class="w-full mt-2 py-2.5 px-4 rounded-lg bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white text-sm font-semibold transition flex items-center justify-center gap-2 shadow-lg shadow-sky-600/20 cursor-pointer">
+                            <span>Guardar y Cifrar Dispositivo</span>
+                        </button>
+                    </form>
+                </article>
+
+                <!-- Inventario de Dispositivos -->
+                <article class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl shadow-black/20">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-300">Inventario de Red</h2>
+                        <span id="inventory-count-badge" class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">0 nodos</span>
+                    </div>
+
+                    <div id="device-list" class="space-y-3">
+                        <p class="text-sm text-slate-500 text-center py-6">Cargando inventario...</p>
+                    </div>
+                </article>
+
+            </section>
+
+            <!-- Columna Derecha: Espacio de Trabajo (Backups, Visor, Diff & Rollback) -->
+            <section class="lg:col-span-8 space-y-6">
+
+                <!-- Estado vacío si no hay dispositivo seleccionado -->
+                <div id="empty-workspace" class="bg-slate-900 border border-slate-800 rounded-xl p-12 text-center shadow-xl shadow-black/20">
+                    <div class="w-14 h-14 mx-auto mb-4 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-sky-400">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <h2 class="text-lg font-semibold text-white mb-1">Selecciona un dispositivo de red</h2>
+                    <p class="text-sm text-slate-400 max-w-md mx-auto">
+                        Elige un router del inventario para inspeccionar su historial de respaldos, ejecutar capturas de <code class="text-sky-400 font-mono">running-config</code>, comparar versiones o realizar rollbacks.
+                    </p>
+                </div>
+
+                <!-- Workspace Activo -->
+                <div id="active-workspace" class="hidden space-y-6">
+
+                    <!-- Cabecera del Dispositivo Activo + Navegación -->
+                    <article class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl shadow-black/20">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                            <div>
+                                <div class="flex items-center gap-2.5">
+                                    <h2 id="ws-hostname" class="text-xl font-bold text-white">--</h2>
+                                    <span id="ws-type" class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-sky-300 border border-slate-700">cisco_ios</span>
+                                    <span id="ws-ssh-badge" class="hidden text-xs px-2 py-0.5 rounded-full"></span>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-1 font-mono">
+                                    Host: <span id="ws-ip" class="text-slate-200">--</span>:<span id="ws-port" class="text-slate-200">22</span> &middot; Usuario: <span id="ws-user" class="text-slate-200">--</span>
+                                </p>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button id="ws-btn-test" type="button" class="px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition inline-flex items-center gap-1.5 cursor-pointer">
+                                    <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                    Probar SSH
+                                </button>
+                                <button id="ws-btn-backup" type="button" class="px-3.5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition inline-flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 cursor-pointer">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                    Respaldar Ahora
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Pestañas de Navegación -->
+                        <nav class="flex gap-2 pt-4" aria-label="Vistas del dispositivo">
+                            <button id="tab-history" type="button" data-tab="history"
+                                class="px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer bg-sky-600 text-white">
+                                Historial y Visor Config
+                            </button>
+                            <button id="tab-diff" type="button" data-tab="diff"
+                                class="px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer bg-slate-800 text-slate-300 hover:bg-slate-700">
+                                Comparador Diff &amp; Rollback
+                            </button>
+                        </nav>
+                    </article>
+
+                    <!-- PANEL 1: Historial de Backups y Visor de Configuración -->
+                    <div id="panel-history" class="space-y-6">
+                        <article class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl shadow-black/20">
+                            <div class="flex items-center justify-between mb-3">
+                                <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-300">Historial de Respaldos</h3>
+                                <span id="backups-count-label" class="text-xs text-slate-400">0 respaldos</span>
+                            </div>
+
+                            <div class="overflow-x-auto border border-slate-800 rounded-lg">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                                        <tr>
+                                            <th class="px-4 py-2.5 font-medium">Versión</th>
+                                            <th class="px-4 py-2.5 font-medium">Fecha / Hora (UTC)</th>
+                                            <th class="px-4 py-2.5 font-medium">Tamaño</th>
+                                            <th class="px-4 py-2.5 font-medium text-right">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="backups-table-body" class="divide-y divide-slate-800/70">
+                                        <tr>
+                                            <td colspan="4" class="px-4 py-6 text-center text-slate-500">Sin respaldos registrados.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </article>
+
+                        <!-- Visor del running-config -->
+                        <article class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl shadow-black/20">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                                <div>
+                                    <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-300">Visor de Configuración (<span class="font-mono text-sky-400">running-config</span>)</h3>
+                                    <p id="viewer-meta" class="text-xs text-slate-400 mt-0.5">Selecciona un respaldo del historial para inspeccionar su contenido.</p>
+                                </div>
+                                <div id="viewer-actions" class="hidden flex flex-wrap items-center gap-2">
+                                    <button id="btn-copy-config" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition inline-flex items-center gap-1.5 cursor-pointer">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        </svg>
+                                        Copiar
+                                    </button>
+                                    <button id="btn-download-config" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition inline-flex items-center gap-1.5 cursor-pointer">
+                                        Descargar .cfg
+                                    </button>
+                                    <button id="btn-viewer-rollback" type="button" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition inline-flex items-center gap-1.5 cursor-pointer">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                        </svg>
+                                        Restaurar esta configuración
+                                    </button>
+                                </div>
+                            </div>
+
+                            <pre id="config-viewer" class="custom-scroll bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-xs leading-relaxed text-slate-300 overflow-auto max-h-[460px] whitespace-pre">! Ningún respaldo cargado aún.</pre>
+                        </article>
+                    </div>
+
+                    <!-- PANEL 2: Comparador Diff & Rollback -->
+                    <div id="panel-diff" class="hidden space-y-6">
+                        <article class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl shadow-black/20">
+                            <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-300 mb-4">Comparador de Versiones (<span class="font-mono text-sky-400">difflib.unified_diff</span>)</h3>
+
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                                <div class="md:col-span-5">
+                                    <label for="diff-v1" class="block text-xs font-medium text-slate-400 mb-1">Versión A (Base / Anterior)</label>
+                                    <select id="diff-v1" class="w-full px-3 py-2 text-xs font-mono rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-sky-500"></select>
+                                </div>
+                                <div class="md:col-span-5">
+                                    <label for="diff-v2" class="block text-xs font-medium text-slate-400 mb-1">Versión B (Comparada / Nueva)</label>
+                                    <select id="diff-v2" class="w-full px-3 py-2 text-xs font-mono rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-sky-500"></select>
+                                </div>
+                                <div class="md:col-span-2">
+                                    <button id="btn-run-diff" type="button" class="w-full py-2 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition cursor-pointer">
+                                        Comparar
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Barra de Resumen y Rollback -->
+                            <div id="diff-summary-bar" class="hidden mt-4 pt-4 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div class="flex items-center gap-2 text-xs">
+                                    <span id="diff-badge-added" class="px-2.5 py-1 rounded bg-emerald-950/70 text-emerald-400 border border-emerald-800/60 font-mono">+0 adiciones</span>
+                                    <span id="diff-badge-removed" class="px-2.5 py-1 rounded bg-rose-950/70 text-rose-400 border border-rose-800/60 font-mono">-0 supresiones</span>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <button id="btn-rollback-v1" type="button" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600/90 hover:bg-amber-500 text-white transition cursor-pointer">
+                                        Rollback a Versión A
+                                    </button>
+                                    <button id="btn-rollback-v2" type="button" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer">
+                                        Rollback a Versión B
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Contenedor de líneas Diff -->
+                            <div id="diff-output" class="custom-scroll mt-4 bg-slate-950 border border-slate-800 rounded-lg font-mono text-xs overflow-auto max-h-[500px] divide-y divide-slate-900/50">
+                                <p class="p-6 text-center text-slate-500 font-sans">Selecciona dos respaldos y haz clic en <strong>Comparar</strong> para inspeccionar los cambios.</p>
+                            </div>
+                        </article>
+                    </div>
+
+                    <!-- Resultado de Ejecución CLI (Rollback) -->
+                    <article id="cli-output-panel" class="hidden bg-slate-900 border border-amber-800/50 rounded-xl p-5 shadow-xl shadow-black/20">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-semibold text-amber-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3" />
+                                </svg>
+                                Salida de Ejecución CLI en Router (Rollback / Apply)
+                            </h3>
+                            <button id="btn-close-cli" type="button" class="text-xs text-slate-400 hover:text-white cursor-pointer">Ocultar</button>
+                        </div>
+                        <pre id="cli-output-text" class="custom-scroll bg-slate-950 border border-slate-800 rounded-lg p-3 font-mono text-xs text-emerald-300 overflow-auto max-h-60 whitespace-pre-wrap"></pre>
+                    </article>
+
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Modal de Confirmación Nativo -->
+    <dialog id="confirm-dialog" class="bg-slate-900 text-slate-100 border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl m-auto">
+        <div class="flex items-start gap-3">
+            <div id="dialog-icon" class="w-10 h-10 rounded-full bg-amber-950/70 border border-amber-700/60 flex items-center justify-center shrink-0 text-amber-400">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+            </div>
+            <div>
+                <h3 id="dialog-title" class="text-base font-bold text-white">Confirmar Acción</h3>
+                <p id="dialog-message" class="text-sm text-slate-300 mt-1.5 leading-relaxed"></p>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2.5 mt-6">
+            <button id="dialog-cancel" type="button" class="px-4 py-2 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer">
+                Cancelar
+            </button>
+            <button id="dialog-confirm" type="button" class="px-4 py-2 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition cursor-pointer">
+                Confirmar
+            </button>
+        </div>
+    </dialog>
+
+    <script>
+        (() => {
+            // Estado central de la aplicación
+            const state = {
+                devices: [],
+                selectedDeviceId: null,
+                selectedBackup: null,
+                sshStatusByDevice: {}, // { [id]: { ok: bool, label: string } }
+                activeTab: 'history',
+                pendingDialogAction: null
+            };
+
+            // Referencias DOM
+            const el = {
+                toastContainer: document.getElementById('toast-container'),
+                statDevices: document.getElementById('stat-devices'),
+                statBackups: document.getElementById('stat-backups'),
+                inventoryCountBadge: document.getElementById('inventory-count-badge'),
+                btnRefresh: document.getElementById('btn-refresh'),
+                formAddDevice: document.getElementById('add-device-form'),
+                btnSubmitDevice: document.getElementById('btn-submit-device'),
+                deviceList: document.getElementById('device-list'),
+
+                emptyWorkspace: document.getElementById('empty-workspace'),
+                activeWorkspace: document.getElementById('active-workspace'),
+                wsHostname: document.getElementById('ws-hostname'),
+                wsType: document.getElementById('ws-type'),
+                wsSshBadge: document.getElementById('ws-ssh-badge'),
+                wsIp: document.getElementById('ws-ip'),
+                wsPort: document.getElementById('ws-port'),
+                wsUser: document.getElementById('ws-user'),
+                wsBtnTest: document.getElementById('ws-btn-test'),
+                wsBtnBackup: document.getElementById('ws-btn-backup'),
+
+                tabHistory: document.getElementById('tab-history'),
+                tabDiff: document.getElementById('tab-diff'),
+                panelHistory: document.getElementById('panel-history'),
+                panelDiff: document.getElementById('panel-diff'),
+
+                backupsCountLabel: document.getElementById('backups-count-label'),
+                backupsTableBody: document.getElementById('backups-table-body'),
+                viewerMeta: document.getElementById('viewer-meta'),
+                viewerActions: document.getElementById('viewer-actions'),
+                configViewer: document.getElementById('config-viewer'),
+                btnCopyConfig: document.getElementById('btn-copy-config'),
+                btnDownloadConfig: document.getElementById('btn-download-config'),
+                btnViewerRollback: document.getElementById('btn-viewer-rollback'),
+
+                diffV1: document.getElementById('diff-v1'),
+                diffV2: document.getElementById('diff-v2'),
+                btnRunDiff: document.getElementById('btn-run-diff'),
+                diffSummaryBar: document.getElementById('diff-summary-bar'),
+                diffBadgeAdded: document.getElementById('diff-badge-added'),
+                diffBadgeRemoved: document.getElementById('diff-badge-removed'),
+                btnRollbackV1: document.getElementById('btn-rollback-v1'),
+                btnRollbackV2: document.getElementById('btn-rollback-v2'),
+                diffOutput: document.getElementById('diff-output'),
+
+                cliOutputPanel: document.getElementById('cli-output-panel'),
+                cliOutputText: document.getElementById('cli-output-text'),
+                btnCloseCli: document.getElementById('btn-close-cli'),
+
+                confirmDialog: document.getElementById('confirm-dialog'),
+                dialogTitle: document.getElementById('dialog-title'),
+                dialogMessage: document.getElementById('dialog-message'),
+                dialogCancel: document.getElementById('dialog-cancel'),
+                dialogConfirm: document.getElementById('dialog-confirm')
+            };
+
+            // Utilidad: Notificaciones Toast
+            function showToast(message, type = 'info') {
+                const styles = {
+                    success: 'bg-emerald-950/95 border-emerald-700 text-emerald-200',
+                    error: 'bg-rose-950/95 border-rose-700 text-rose-200',
+                    warning: 'bg-amber-950/95 border-amber-700 text-amber-200',
+                    info: 'bg-slate-900/95 border-sky-700 text-sky-200'
+                };
+                const toast = document.createElement('div');
+                toast.className = `pointer-events-auto border rounded-xl px-4 py-3 shadow-2xl text-xs font-medium flex items-start justify-between gap-3 transition-opacity duration-300 ${styles[type] || styles.info}`;
+
+                const textSpan = document.createElement('span');
+                textSpan.textContent = message;
+
+                const closeBtn = document.createElement('button');
+                closeBtn.type = 'button';
+                closeBtn.className = 'text-current opacity-70 hover:opacity-100 font-bold cursor-pointer';
+                closeBtn.textContent = '×';
+                closeBtn.addEventListener('click', () => toast.remove());
+
+                toast.appendChild(textSpan);
+                toast.appendChild(closeBtn);
+                el.toastContainer.appendChild(toast);
+
+                setTimeout(() => {
+                    toast.classList.add('opacity-0');
+                    setTimeout(() => toast.remove(), 300);
+                }, 5000);
+            }
+
+            // Utilidad: Wrapper de fetch JSON
+            async function apiFetch(url, options = {}) {
+                const config = {
+                    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+                    ...options
+                };
+                const response = await fetch(url, config);
+                let payload = {};
+                try {
+                    payload = await response.json();
+                } catch {
+                    payload = { status: 'error', message: `Respuesta inesperada del servidor (HTTP ${response.status}).` };
+                }
+                if (!response.ok) {
+                    const err = new Error(payload.message || `Error HTTP ${response.status}`);
+                    err.status = response.status;
+                    err.payload = payload;
+                    throw err;
+                }
+                return payload;
+            }
+
+            // Utilidad: Modal de Confirmación
+            function openConfirmDialog({ title, message, confirmLabel = 'Confirmar', danger = false, onConfirm }) {
+                el.dialogTitle.textContent = title;
+                el.dialogMessage.textContent = message;
+                el.dialogConfirm.textContent = confirmLabel;
+                el.dialogConfirm.className = danger
+                    ? 'px-4 py-2 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition cursor-pointer'
+                    : 'px-4 py-2 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition cursor-pointer';
+
+                state.pendingDialogAction = onConfirm;
+                el.confirmDialog.showModal();
+            }
+
+            el.dialogCancel.addEventListener('click', () => {
+                state.pendingDialogAction = null;
+                el.confirmDialog.close();
+            });
+
+            el.dialogConfirm.addEventListener('click', async () => {
+                const action = state.pendingDialogAction;
+                state.pendingDialogAction = null;
+                el.confirmDialog.close();
+                if (typeof action === 'function') {
+                    await action();
+                }
+            });
+
+            // Gestión de Pestañas
+            function switchTab(tabName) {
+                state.activeTab = tabName;
+                const isHistory = tabName === 'history';
+                el.panelHistory.classList.toggle('hidden', !isHistory);
+                el.panelDiff.classList.toggle('hidden', isHistory);
+
+                el.tabHistory.className = isHistory
+                    ? 'px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer bg-sky-600 text-white'
+                    : 'px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer bg-slate-800 text-slate-300 hover:bg-slate-700';
+                el.tabDiff.className = !isHistory
+                    ? 'px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer bg-sky-600 text-white'
+                    : 'px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer bg-slate-800 text-slate-300 hover:bg-slate-700';
+            }
+
+            el.tabHistory.addEventListener('click', () => switchTab('history'));
+            el.tabDiff.addEventListener('click', () => switchTab('diff'));
+
+            // Cargar Inventario
+            async function loadDevices() {
+                try {
+                    const res = await apiFetch('/api/devices');
+                    state.devices = res.data || [];
+
+                    const totalBackups = state.devices.reduce((acc, d) => acc + (d.backups ? d.backups.length : 0), 0);
+                    el.statDevices.textContent = String(state.devices.length);
+                    el.statBackups.textContent = String(totalBackups);
+                    el.inventoryCountBadge.textContent = `${state.devices.length} ${state.devices.length === 1 ? 'nodo' : 'nodos'}`;
+
+                    renderDeviceList();
+
+                    if (state.selectedDeviceId !== null) {
+                        const stillExists = state.devices.find(d => d.id === state.selectedDeviceId);
+                        if (stillExists) {
+                            renderWorkspace(stillExists);
+                        } else {
+                            state.selectedDeviceId = null;
+                            state.selectedBackup = null;
+                            el.emptyWorkspace.classList.remove('hidden');
+                            el.activeWorkspace.classList.add('hidden');
+                        }
+                    }
+                } catch (err) {
+                    showToast(`Error al cargar dispositivos: ${err.message}`, 'error');
+                }
+            }
+
+            // Renderizar Tarjetas de Inventario
+            function renderDeviceList() {
+                el.deviceList.innerHTML = '';
+                if (state.devices.length === 0) {
+                    const empty = document.createElement('p');
+                    empty.className = 'text-xs text-slate-500 text-center py-6 border border-dashed border-slate-800 rounded-lg';
+                    empty.textContent = 'No hay routers registrados todavía.';
+                    el.deviceList.appendChild(empty);
+                    return;
+                }
+
+                state.devices.forEach(dev => {
+                    const isSelected = dev.id === state.selectedDeviceId;
+                    const sshStatus = state.sshStatusByDevice[dev.id];
+
+                    const card = document.createElement('article');
+                    card.className = `rounded-xl p-3.5 border transition ${
+                        isSelected
+                            ? 'bg-slate-800/80 border-sky-500/80 ring-1 ring-sky-500/30'
+                            : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
+                    }`;
+
+                    // Encabezado de tarjeta
+                    const topRow = document.createElement('div');
+                    topRow.className = 'flex items-start justify-between gap-2 cursor-pointer';
+                    topRow.addEventListener('click', () => selectDevice(dev.id));
+
+                    const infoDiv = document.createElement('div');
+                    const title = document.createElement('h3');
+                    title.className = 'text-sm font-bold text-white flex items-center gap-2';
+                    title.textContent = dev.hostname;
+
+                    if (sshStatus) {
+                        const dot = document.createElement('span');
+                        dot.className = `w-2 h-2 rounded-full ${sshStatus.ok ? 'bg-emerald-400' : 'bg-rose-500'}`;
+                        dot.title = sshStatus.label;
+                        title.appendChild(dot);
+                    }
+
+                    const sub = document.createElement('p');
+                    sub.className = 'text-xs font-mono text-slate-400 mt-0.5';
+                    sub.textContent = `${dev.ip_address}:${dev.port || 22} · ${dev.username}`;
+
+                    infoDiv.appendChild(title);
+                    infoDiv.appendChild(sub);
+
+                    const bCount = document.createElement('span');
+                    bCount.className = 'text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 shrink-0';
+                    const count = dev.backups ? dev.backups.length : 0;
+                    bCount.textContent = `${count} cfg`;
+
+                    topRow.appendChild(infoDiv);
+                    topRow.appendChild(bCount);
+
+                    // Botonera de acciones
+                    const actionsRow = document.createElement('div');
+                    actionsRow.className = 'grid grid-cols-3 gap-1.5 mt-3 pt-2.5 border-t border-slate-800/80';
+
+                    const btnTest = document.createElement('button');
+                    btnTest.type = 'button';
+                    btnTest.className = 'px-2 py-1.5 rounded-md text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-amber-300 transition cursor-pointer';
+                    btnTest.textContent = 'Probar SSH';
+                    btnTest.addEventListener('click', () => handleTestSsh(dev, btnTest));
+
+                    const btnBackup = document.createElement('button');
+                    btnBackup.type = 'button';
+                    btnBackup.className = 'px-2 py-1.5 rounded-md text-[11px] font-semibold bg-emerald-700/80 hover:bg-emerald-600 text-white transition cursor-pointer';
+                    btnBackup.textContent = 'Respaldar';
+                    btnBackup.addEventListener('click', () => handleBackupNow(dev, btnBackup));
+
+                    const btnDelete = document.createElement('button');
+                    btnDelete.type = 'button';
+                    btnDelete.className = 'px-2 py-1.5 rounded-md text-[11px] font-medium bg-slate-800 hover:bg-rose-900/80 text-rose-400 hover:text-rose-200 transition cursor-pointer';
+                    btnDelete.textContent = 'Eliminar';
+                    btnDelete.addEventListener('click', () => handleDeleteDevice(dev));
+
+                    actionsRow.appendChild(btnTest);
+                    actionsRow.appendChild(btnBackup);
+                    actionsRow.appendChild(btnDelete);
+
+                    card.appendChild(topRow);
+                    card.appendChild(actionsRow);
+                    el.deviceList.appendChild(card);
+                });
+            }
+
+            // Seleccionar Dispositivo
+            function selectDevice(deviceId) {
+                state.selectedDeviceId = deviceId;
+                state.selectedBackup = null;
+                el.cliOutputPanel.classList.add('hidden');
+                el.diffSummaryBar.classList.add('hidden');
+                el.diffOutput.innerHTML = '<p class="p-6 text-center text-slate-500 font-sans">Selecciona dos respaldos y haz clic en <strong>Comparar</strong> para inspeccionar los cambios.</p>';
+                resetViewer();
+
+                const dev = state.devices.find(d => d.id === deviceId);
+                if (dev) {
+                    renderDeviceList();
+                    renderWorkspace(dev);
+                }
+            }
+
+            function resetViewer() {
+                el.viewerMeta.textContent = 'Selecciona un respaldo del historial para inspeccionar su contenido.';
+                el.viewerActions.classList.add('hidden');
+                el.configViewer.textContent = '! Ningún respaldo cargado aún.';
+            }
+
+            // Renderizar Workspace del Dispositivo Seleccionado
+            function renderWorkspace(dev) {
+                el.emptyWorkspace.classList.add('hidden');
+                el.activeWorkspace.classList.remove('hidden');
+
+                el.wsHostname.textContent = dev.hostname;
+                el.wsType.textContent = dev.device_type || 'cisco_ios';
+                el.wsIp.textContent = dev.ip_address;
+                el.wsPort.textContent = String(dev.port || 22);
+                el.wsUser.textContent = dev.username;
+
+                const sshStatus = state.sshStatusByDevice[dev.id];
+                if (sshStatus) {
+                    el.wsSshBadge.classList.remove('hidden');
+                    el.wsSshBadge.className = sshStatus.ok
+                        ? 'text-xs px-2 py-0.5 rounded-full bg-emerald-950/70 text-emerald-400 border border-emerald-800/60'
+                        : 'text-xs px-2 py-0.5 rounded-full bg-rose-950/70 text-rose-400 border border-rose-800/60';
+                    el.wsSshBadge.textContent = sshStatus.label;
+                } else {
+                    el.wsSshBadge.classList.add('hidden');
+                }
+
+                const backups = dev.backups || [];
+                el.backupsCountLabel.textContent = `${backups.length} ${backups.length === 1 ? 'respaldo' : 'respaldos'}`;
+
+                // Tabla de respaldos
+                el.backupsTableBody.innerHTML = '';
+                if (backups.length === 0) {
+                    const tr = document.createElement('tr');
+                    const td = document.createElement('td');
+                    td.colSpan = 4;
+                    td.className = 'px-4 py-6 text-center text-slate-500';
+                    td.textContent = 'Sin respaldos capturados. Haz clic en "Respaldar Ahora" para obtener el running-config.';
+                    tr.appendChild(td);
+                    el.backupsTableBody.appendChild(tr);
+                } else {
+                    backups.forEach(b => {
+                        const tr = document.createElement('tr');
+                        tr.className = 'hover:bg-slate-800/40 transition';
+
+                        const tdId = document.createElement('td');
+                        tdId.className = 'px-4 py-2.5 font-mono font-semibold text-sky-400';
+                        tdId.textContent = `#${b.id}`;
+
+                        const tdTime = document.createElement('td');
+                        tdTime.className = 'px-4 py-2.5 font-mono text-slate-300';
+                        tdTime.textContent = b.timestamp;
+
+                        const tdSize = document.createElement('td');
+                        tdSize.className = 'px-4 py-2.5 font-mono text-slate-400';
+                        tdSize.textContent = b.size_bytes ? `${b.size_bytes} B` : '--';
+
+                        const tdActions = document.createElement('td');
+                        tdActions.className = 'px-4 py-2.5 text-right space-x-2';
+
+                        const btnView = document.createElement('button');
+                        btnView.type = 'button';
+                        btnView.className = 'px-2.5 py-1 rounded bg-slate-800 hover:bg-sky-700 text-slate-200 hover:text-white transition cursor-pointer';
+                        btnView.textContent = 'Ver Config';
+                        btnView.addEventListener('click', () => loadBackupDetail(b.id));
+
+                        const btnRb = document.createElement('button');
+                        btnRb.type = 'button';
+                        btnRb.className = 'px-2.5 py-1 rounded bg-amber-950/70 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-800/60 transition cursor-pointer';
+                        btnRb.textContent = 'Rollback';
+                        btnRb.addEventListener('click', () => confirmAndRollback(dev, b.id));
+
+                        tdActions.appendChild(btnView);
+                        tdActions.appendChild(btnRb);
+
+                        tr.appendChild(tdId);
+                        tr.appendChild(tdTime);
+                        tr.appendChild(tdSize);
+                        tr.appendChild(tdActions);
+                        el.backupsTableBody.appendChild(tr);
+                    });
+                }
+
+                // Selectores de Diff
+                populateDiffSelectors(backups);
+            }
+
+            function populateDiffSelectors(backups) {
+                el.diffV1.innerHTML = '';
+                el.diffV2.innerHTML = '';
+
+                if (backups.length === 0) {
+                    const opt = new Option('Sin respaldos disponibles', '');
+                    el.diffV1.add(opt.cloneNode(true));
+                    el.diffV2.add(opt);
+                    return;
+                }
+
+                backups.forEach(b => {
+                    const label = `#${b.id} — ${b.timestamp}`;
+                    el.diffV1.add(new Option(label, String(b.id)));
+                    el.diffV2.add(new Option(label, String(b.id)));
+                });
+
+                // Preseleccionar la versión anterior como v1 y la más reciente como v2 si hay >= 2
+                if (backups.length >= 2) {
+                    el.diffV1.value = String(backups[1].id);
+                    el.diffV2.value = String(backups[0].id);
+                }
+            }
+
+            // Registrar Nuevo Dispositivo
+            el.formAddDevice.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const formData = new FormData(el.formAddDevice);
+                const body = {
+                    hostname: String(formData.get('hostname') || '').trim(),
+                    ip_address: String(formData.get('ip_address') || '').trim(),
+                    device_type: String(formData.get('device_type') || 'cisco_ios'),
+                    port: Number(formData.get('port') || 22),
+                    username: String(formData.get('username') || '').trim(),
+                    password: String(formData.get('password') || ''),
+                    secret: String(formData.get('secret') || '')
+                };
+
+                el.btnSubmitDevice.disabled = true;
+                el.btnSubmitDevice.classList.add('opacity-60');
+                try {
+                    const res = await apiFetch('/api/devices', {
+                        method: 'POST',
+                        body: JSON.stringify(body)
+                    });
+                    showToast(res.message || 'Dispositivo registrado correctamente.', 'success');
+                    el.formAddDevice.reset();
+                    document.getElementById('input-port').value = '22';
+                    await loadDevices();
+                    if (res.data && res.data.id) {
+                        selectDevice(res.data.id);
+                    }
+                } catch (err) {
+                    showToast(err.message, 'error');
+                } finally {
+                    el.btnSubmitDevice.disabled = false;
+                    el.btnSubmitDevice.classList.remove('opacity-60');
+                }
+            });
+
+            // Probar SSH
+            async function handleTestSsh(dev, triggerBtn) {
+                const origText = triggerBtn.textContent;
+                triggerBtn.disabled = true;
+                triggerBtn.textContent = 'Probando...';
+                try {
+                    const res = await apiFetch(`/api/devices/${dev.id}/test`, { method: 'POST' });
+                    state.sshStatusByDevice[dev.id] = { ok: true, label: 'SSH OK' };
+                    showToast(res.message, 'success');
+                } catch (err) {
+                    state.sshStatusByDevice[dev.id] = { ok: false, label: 'SSH Error' };
+                    showToast(err.message, 'error');
+                } finally {
+                    triggerBtn.disabled = false;
+                    triggerBtn.textContent = origText;
+                    renderDeviceList();
+                    if (state.selectedDeviceId === dev.id) {
+                        renderWorkspace(dev);
+                    }
+                }
+            }
+
+            // Respaldar Ahora
+            async function handleBackupNow(dev, triggerBtn) {
+                const origText = triggerBtn.textContent;
+                triggerBtn.disabled = true;
+                triggerBtn.textContent = 'Extrayendo...';
+                try {
+                    const res = await apiFetch(`/api/devices/${dev.id}/backup`, { method: 'POST' });
+                    state.sshStatusByDevice[dev.id] = { ok: true, label: 'SSH OK' };
+                    showToast(res.message, 'success');
+                    await loadDevices();
+                    selectDevice(dev.id);
+                    if (res.data && res.data.id) {
+                        await loadBackupDetail(res.data.id);
+                    }
+                } catch (err) {
+                    showToast(`Error en backup: ${err.message}`, 'error');
+                } finally {
+                    triggerBtn.disabled = false;
+                    triggerBtn.textContent = origText;
+                }
+            }
+
+            // Eliminar Dispositivo
+            function handleDeleteDevice(dev) {
+                openConfirmDialog({
+                    title: 'Eliminar Dispositivo',
+                    message: `¿Estás seguro de eliminar "${dev.hostname}" (${dev.ip_address})? Esta acción eliminará permanentemente el dispositivo y todos sus respaldos almacenados.`,
+                    confirmLabel: 'Sí, eliminar',
+                    danger: true,
+                    onConfirm: async () => {
+                        try {
+                            const res = await apiFetch(`/api/devices/${dev.id}`, { method: 'DELETE' });
+                            delete state.sshStatusByDevice[dev.id];
+                            showToast(res.message, 'success');
+                            await loadDevices();
+                        } catch (err) {
+                            showToast(err.message, 'error');
+                        }
+                    }
+                });
+            }
+
+            // Cargar Detalle de un Backup en el Visor
+            async function loadBackupDetail(backupId) {
+                try {
+                    const res = await apiFetch(`/api/backups/${backupId}`);
+                    const b = res.data;
+                    state.selectedBackup = b;
+                    el.viewerMeta.textContent = `Respaldo #${b.id} · Capturado: ${b.timestamp} · ${b.size_bytes} bytes`;
+                    el.configViewer.textContent = b.config_text || b.raw_config || '';
+                    el.viewerActions.classList.remove('hidden');
+                    switchTab('history');
+                } catch (err) {
+                    showToast(`No se pudo cargar el respaldo #${backupId}: ${err.message}`, 'error');
+                }
+            }
+
+            // Copiar y Descargar Configuración
+            el.btnCopyConfig.addEventListener('click', async () => {
+                if (!state.selectedBackup) return;
+                try {
+                    await navigator.clipboard.writeText(state.selectedBackup.config_text || '');
+                    showToast('Configuración copiada al portapapeles.', 'success');
+                } catch {
+                    showToast('No se pudo acceder al portapapeles.', 'warning');
+                }
+            });
+
+            el.btnDownloadConfig.addEventListener('click', () => {
+                if (!state.selectedBackup) return;
+                const dev = state.devices.find(d => d.id === state.selectedDeviceId);
+                const filename = `${dev ? dev.hostname : 'device'}_backup_${state.selectedBackup.id}.cfg`;
+                const blob = new Blob([state.selectedBackup.config_text || ''], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            });
+
+            el.btnViewerRollback.addEventListener('click', () => {
+                const dev = state.devices.find(d => d.id === state.selectedDeviceId);
+                if (dev && state.selectedBackup) {
+                    confirmAndRollback(dev, state.selectedBackup.id);
+                }
+            });
+
+            // Comparar Versiones (Diff)
+            el.btnRunDiff.addEventListener('click', async () => {
+                if (!state.selectedDeviceId) return;
+                const v1 = el.diffV1.value;
+                const v2 = el.diffV2.value;
+                if (!v1 || !v2) {
+                    showToast('Selecciona dos versiones válidas para comparar.', 'warning');
+                    return;
+                }
+
+                el.btnRunDiff.disabled = true;
+                el.btnRunDiff.textContent = 'Calculando...';
+                try {
+                    const res = await apiFetch(`/api/devices/${state.selectedDeviceId}/diff?v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}`);
+                    renderDiff(res.data);
+                } catch (err) {
+                    showToast(`Error al calcular diff: ${err.message}`, 'error');
+                } finally {
+                    el.btnRunDiff.disabled = false;
+                    el.btnRunDiff.textContent = 'Comparar';
+                }
+            });
+
+            function renderDiff(diffData) {
+                const lines = diffData.diff_lines || [];
+                let addedCount = 0;
+                let removedCount = 0;
+
+                el.diffOutput.innerHTML = '';
+                el.diffSummaryBar.classList.remove('hidden');
+
+                if (lines.length === 0) {
+                    el.diffBadgeAdded.textContent = '+0 adiciones';
+                    el.diffBadgeRemoved.textContent = '-0 supresiones';
+                    const p = document.createElement('p');
+                    p.className = 'p-6 text-center text-emerald-400 font-sans text-xs';
+                    p.textContent = 'No existen diferencias entre las dos versiones seleccionadas.';
+                    el.diffOutput.appendChild(p);
+                    return;
+                }
+
+                lines.forEach((line, idx) => {
+                    const row = document.createElement('div');
+                    row.className = 'px-3 py-0.5 whitespace-pre font-mono text-xs flex items-start gap-3';
+
+                    const ln = document.createElement('span');
+                    ln.className = 'text-slate-600 select-none w-8 text-right shrink-0';
+                    ln.textContent = String(idx + 1);
+
+                    const code = document.createElement('span');
+                    code.className = 'flex-1';
+                    code.textContent = line;
+
+                    if (line.startsWith('+++') || line.startsWith('---')) {
+                        row.className += ' bg-slate-900 text-slate-300 font-semibold py-1';
+                    } else if (line.startsWith('@@')) {
+                        row.className += ' bg-sky-950/50 text-sky-300 border-l-2 border-sky-500 py-1';
+                    } else if (line.startsWith('+')) {
+                        addedCount += 1;
+                        row.className += ' bg-emerald-950/60 text-emerald-300 border-l-2 border-emerald-500';
+                    } else if (line.startsWith('-')) {
+                        removedCount += 1;
+                        row.className += ' bg-rose-950/60 text-rose-300 border-l-2 border-rose-500';
+                    } else {
+                        row.className += ' text-slate-300';
+                    }
+
+                    row.appendChild(ln);
+                    row.appendChild(code);
+                    el.diffOutput.appendChild(row);
+                });
+
+                el.diffBadgeAdded.textContent = `+${addedCount} ${addedCount === 1 ? 'adición' : 'adiciones'}`;
+                el.diffBadgeRemoved.textContent = `-${removedCount} ${removedCount === 1 ? 'supresión' : 'supresiones'}`;
+            }
+
+            // Rollback desde Diff
+            el.btnRollbackV1.addEventListener('click', () => {
+                const dev = state.devices.find(d => d.id === state.selectedDeviceId);
+                const v1 = Number(el.diffV1.value);
+                if (dev && v1) confirmAndRollback(dev, v1);
+            });
+
+            el.btnRollbackV2.addEventListener('click', () => {
+                const dev = state.devices.find(d => d.id === state.selectedDeviceId);
+                const v2 = Number(el.diffV2.value);
+                if (dev && v2) confirmAndRollback(dev, v2);
+            });
+
+            // Ejecutar Rollback con Confirmación
+            function confirmAndRollback(dev, backupId) {
+                openConfirmDialog({
+                    title: 'Confirmar Rollback en Router en Vivo',
+                    message: `Se aplicará la configuración del respaldo #${backupId} sobre "${dev.hostname}" (${dev.ip_address}) mediante Netmiko y se guardará en NVRAM (write memory). ¿Deseas continuar?`,
+                    confirmLabel: 'Aplicar Rollback',
+                    danger: false,
+                    onConfirm: async () => {
+                        showToast(`Aplicando respaldo #${backupId} en ${dev.hostname}...`, 'info');
+                        try {
+                            const res = await apiFetch(`/api/devices/${dev.id}/rollback/${backupId}`, { method: 'POST' });
+                            showToast(res.message, 'success');
+                            if (res.data && res.data.output !== undefined) {
+                                el.cliOutputPanel.classList.remove('hidden');
+                                el.cliOutputText.textContent = `Comandos aplicados: ${res.data.commands_applied}\n\n${res.data.output}`;
+                            }
+                        } catch (err) {
+                            showToast(`Error en rollback: ${err.message}`, 'error');
+                        }
+                    }
+                });
+            }
+
+            // Botones del Workspace Header
+            el.wsBtnTest.addEventListener('click', () => {
+                const dev = state.devices.find(d => d.id === state.selectedDeviceId);
+                if (dev) handleTestSsh(dev, el.wsBtnTest);
+            });
+
+            el.wsBtnBackup.addEventListener('click', () => {
+                const dev = state.devices.find(d => d.id === state.selectedDeviceId);
+                if (dev) handleBackupNow(dev, el.wsBtnBackup);
+            });
+
+            el.btnCloseCli.addEventListener('click', () => el.cliOutputPanel.classList.add('hidden'));
+            el.btnRefresh.addEventListener('click', loadDevices);
+
+            // Inicialización
+            loadDevices();
+        })();
+    </script>
+</body>
+</html>
