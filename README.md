@@ -157,7 +157,7 @@ Archivos generados localmente y **no versionados**: `.env`, `network_manager.db`
 
 ```powershell
 # 1. Clonar y entrar al proyecto
-git clone https://github.com/Freazy17/network-config-manager.git
+git clone https://github.com/mgc-cloud17/network-config-manager.git
 cd network-config-manager
 
 # 2. Entorno virtual (si PowerShell bloquea el script: Set-ExecutionPolicy -Scope Process Bypass)
@@ -184,7 +184,7 @@ python app.py
 
 ```bash
 # 1. Clonar y entrar al proyecto
-git clone https://github.com/Freazy17/network-config-manager.git
+git clone https://github.com/mgc-cloud17/network-config-manager.git
 cd network-config-manager
 
 # 2. Entorno virtual
